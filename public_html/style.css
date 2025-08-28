@@ -1,0 +1,79 @@
+:root {
+    --tile-color-1: #cacaca;
+    --tile-color-2: #bababa;
+    --tile-hover-color-1: #dbdbdb;
+    --border: 2px solid black;
+}
+
+.board {
+    width: fit-content;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+}
+
+.tile {
+    width: 100px;
+    height: 100px;
+
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    text-align: center;
+
+    font-size: 3em;
+}
+
+.tile0, .tile2, .tile4, .tile6, .tile8 {
+    background-color: var(--tile-color-1);
+}
+
+.tile1, .tile3, .tile5, .tile7 {
+    background-color: var(--tile-color-2);
+}
+
+.tile0, .tile1, .tile3, .tile4, .tile6, .tile7 {
+    border-right: var(--border);
+}
+
+.tile3, .tile4, .tile5 {
+    border-top: var(--border);
+    border-bottom: var(--border);
+}
+
+.tile:hover {
+    background-color: var(--tile-hover-color-1);
+}
+
+#game-info {
+    display: flex;
+    gap: 10px;
+}
+
+.info {
+    display: flex;
+    flex-direction: column;
+}
+
+#main-container {
+    display: flex;
+    width: 100%;
+}
+
+#gameplay-container, #chat-container {
+    border: 1px solid gray;
+    border-radius: 5px;
+    padding: 10px;
+    margin: 10px;
+}
+
+#gameplay-container {
+    width: 60%;
+}
+
+#chat-container {
+    width: 40%;
+}
+
+#message {
+    width: 100%;
+}
