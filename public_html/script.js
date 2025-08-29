@@ -62,13 +62,13 @@ const chatHistory = [];
 function createXIcon() {
     const div = document.createElement("div");
     div.classList.add("icon", "icon-x");
-    div.innerHTML = `<i class="fa-solid fa-xmark"></i>`
+    div.innerHTML = `<i class="fa-solid fa-xmark tx${myTeam}"></i>`
     return div;
 }
 function createOIcon() {
     const div = document.createElement("div");
     div.classList.add("icon", "icon-o");
-    div.innerHTML = `<i class="fa-solid fa-o"></i>`
+    div.innerHTML = `<i class="fa-solid fa-o to${myTeam}"></i>`
     return div;
 }
 function createIcon(team) {

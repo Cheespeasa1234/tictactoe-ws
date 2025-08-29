@@ -6,7 +6,7 @@ const app = express();
 const server = createServer(app);
 const io = new Server(server);
 
-type GameState = "win1" | "win2" | "tie" | "playing" | "waiting" | "disconnect";
+type GameState = "win" | "tie" | "playing" | "waiting" | "disconnect";
 type PlayerType = "p1" | "p2" | "srv";
 
 class Room {
@@ -14,7 +14,10 @@ class Room {
     
     board: number[];
     turn: number;
+
     gameState: GameState;
+    winTeam: number;
+    winId: number;
 
     player1: Socket;
     player2: Socket;
@@ -24,6 +27,8 @@ class Room {
         this.board = [0,0,0,0,0,0,0,0,0];
         this.turn = 0;
         this.gameState = "waiting";
+        this.winTeam = 0;
+        this.winId = -1;
     }
 
     player1Connected(): boolean {
@@ -35,8 +40,7 @@ class Room {
     }
 
     getStateGameOver(): boolean {
-        return this.gameState === "win1" ||
-            this.gameState === "win2" ||
+        return this.gameState === "win" ||
             this.gameState === "tie" ||
             this.gameState === "disconnect";
     }
@@ -58,6 +62,8 @@ class Room {
             gameState: this.gameState,
             gameStateOver: this.getStateGameOver(),
             gameStateInProgress: this.getStateGameInProgress(),
+            winTeam: this.winTeam,
+            winId: this.winId,
 
         };
 
@@ -82,7 +88,8 @@ class Room {
      * Returns which team is their turn.
      */
     getTeamTurn(): number {
-        if (this.turn % 2 == 0) return 1;
+        if (!this.getStateGameInProgress()) return 0;
+        else if (this.turn % 2 == 0) return 1;
         else if (this.turn % 2 == 1) return 2;
         return 0;
     }
@@ -118,6 +125,78 @@ class Room {
         }
     }
 
+    handleDetectWinOrTie() {
+        // check for win or tie
+        for (let i = 0; i < 3; i++) {
+            const id = i * 3;
+            const hor = this.board[id] !== 0 && this.board[id] === this.board[1 + id] && this.board[1 + id] === this.board[2 + id];
+            const ver = this.board[i] !== 0 && this.board[i] === this.board[3 + i] && this.board[3 + i] === this.board[6 + i];
+
+            if (hor) {
+                if (this.board[id] === 1) {
+                    console.log("win1 hor");
+                    this.gameState = "win";
+                    this.winTeam = 1;
+                    this.winId = i;
+                    return;
+                } else if (this.board[id] === 2) {
+                    console.log("win2 hor");
+                    this.gameState = "win";
+                    this.winTeam = 2;
+                    this.winId = i;
+                    return;
+                }
+            } else if (ver) {
+                if (this.board[i] === 1) {
+                    console.log("win1 ver");
+                    this.gameState = "win";
+                    this.winTeam = 1;
+                    this.winId = 3 + i;
+                    return;
+                } else if (this.board[id] === 2) {
+                    console.log("win2 ver");
+                    this.gameState = "win";
+                    this.winTeam = 2;
+                    this.winId = 3 + i;
+                    return;
+                }
+            }
+        }
+
+        const dia1 = this.board[0] === this.board[4] && this.board[4] === this.board[8];
+        const dia2 = this.board[6] === this.board[4] && this.board[4] === this.board[2];
+
+        if (dia1 || dia2) {
+            if (this.board[4] === 1) {
+                console.log("win1 dia");
+                this.gameState = "win";
+                this.winTeam = 1;
+                this.winId = 7;
+                return;
+            } else if (this.board[4] === 2) {
+                console.log("win2 dia");
+                this.gameState = "win";
+                this.winTeam = 2;
+                this.winId = 8;
+                return;
+            }
+        }
+
+        let foundZero = false;
+        for (let i = 0; i < 9; i++) {
+            if (this.board[i] === 0) {
+                foundZero = true;
+                break;
+            }
+        }
+
+        if (!foundZero) {
+            this.gameState = "tie";
+            return;
+        }
+        
+    }
+
     socketMadeMove(socket: Socket, location: number): { success: boolean, message: string } {
         // figure out what team they are
         const team = this.getSocketTeam(socket);
@@ -139,11 +218,14 @@ class Room {
 
         this.board[location] = team;
         this.turn++;
+
+        this.handleDetectWinOrTie();
+
         this.sendGameState();
         return { success: true, message: "Move accepted" };
     }
 
-    socketSentMessage(socket: Socket, msg: string) {
+    socketSentMessage(socket: Socket, msg: string): void {
         const team = this.getSocketTeam(socket);
         io.to(this.roomcode).emit("chat", { from: team, msg: msg });
     }
@@ -177,6 +259,11 @@ io.on("connection", (socket: Socket) => {
             return;
         }
         
+        if (roomcode.length === 0) {
+            socket.emit("status", { success: false, message: "Invalid room code." });
+            return;    
+        }
+        
         const room: Room = new Room(roomcode);
         rooms.set(roomcode, room);
         room.socketJoin(socket);
@@ -185,6 +272,10 @@ io.on("connection", (socket: Socket) => {
     });
 
     socket.on("joinroom", (roomcode: string) => {
+        if (roomcode.length === 0) {
+            socket.emit("status", { success: false, message: "Invalid room code." });
+            return;    
+        }
         const room = rooms.get(roomcode);
         if (!room) {
             socket.emit("status", { success: false, message: "Room not found." });

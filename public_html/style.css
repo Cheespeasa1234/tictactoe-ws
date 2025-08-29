@@ -77,3 +77,11 @@
 #message {
     width: 100%;
 }
+
+.tx1, .to2 {
+    color: blue;
+}
+
+.tx2, .to1 {
+    color: red;
+}
