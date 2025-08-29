@@ -3,6 +3,11 @@ socket.onAny((eventName, ...args) => {
     console.log("recieved " + eventName + ": " + JSON.stringify(args));
 });
 
+socket.on("status", (data) => {
+    const { success, message } = data;
+    handleChat({ from: 0, msg: message });
+});
+
 socket.on("roomstatus", (room) => {
     const { code, player1Connected, player2Connected, board, turn, gameState, gameStateOver, gameStateInProgress, yourTeam, yourTurn } = room;
     
@@ -14,29 +19,45 @@ socket.on("roomstatus", (room) => {
     myTeam = yourTeam;
 });
 
-socket.on("chat", data => {
+function handleChat(data) {
     const from = data.from;
     const msg = data.msg;
+    const time = data.time;
 
     if (from === 0) {
-        chatHistory.push({ id: from, from: "System", msg: msg });
+        chatHistory.push({ id: from, time: time, from: "System", msg: msg });
     } else if (myTeam === 0) {
-        chatHistory.push({ id: from, from: "Player" + from, msg: msg });
+        chatHistory.push({ id: from, time: time, from: "Player" + from, msg: msg });
     } else {
-        chatHistory.push({ id: from, from: myTeam === from ? "You" : "Opponent", msg: msg });
+        chatHistory.push({ id: from, time: time, from: myTeam === from ? "You" : "Opponent", msg: msg });
     }
 
     chatDisplayElement.innerHTML = "";
     for (const chatMsg of chatHistory) {
-        const e = document.createElement("p");
+        const e = document.createElement("div");
         e.classList.add("chat-message");
         if (chatMsg.id === 0) {
-            e.classList.add("system-message");
+            e.classList.add("chat-system-message");
         }
-        e.innerText = chatMsg.from + ": " + chatMsg.msg;
+
+        const text = document.createElement("span");
+        text.innerText = chatMsg.from + ": " + chatMsg.msg;
+        e.appendChild(text);
+        
+        if  (chatMsg.time) {
+            const time = document.createElement("span");
+            time.classList.add("chat-message-time");
+            time.innerText = chatMsg.time;
+            e.appendChild(time);
+        }
+        
+
         chatDisplayElement.appendChild(e);
     }
-});
+    chatDisplayElement.scrollTop = chatDisplayElement.scrollHeight;
+}
+
+socket.on("chat", handleChat);
 
 const VALUE_X = 1;
 const VALUE_O = 2;
@@ -111,7 +132,19 @@ createRoomButtonElement.addEventListener("click", () => {
     socket.emit("createroom", roomInputElement.value);
 });
 
-sendMessageButtonElement.addEventListener("click", () => {
+// setInterval(() => {
+//     socket.emit("chat", "spam test");
+// }, 100);
+
+function activateMessageSend() {
     socket.emit("chat", messageInputElement.value);
     messageInputElement.value = "";
-})
+}
+
+sendMessageButtonElement.addEventListener("click", activateMessageSend);
+
+messageInputElement.addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey && messageInputElement.value.trim().length > 0) {
+        activateMessageSend();
+    }
+});

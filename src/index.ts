@@ -1,6 +1,7 @@
 import express from "express";
 import { createServer } from "node:http";
 import { Server, Socket } from "socket.io";
+import dateFormat from "dateformat";
 
 const app = express();
 const server = createServer(app);
@@ -95,20 +96,37 @@ class Room {
     }
 
     removePlayers(): void {
-        this.player1.rooms.delete(this.roomcode);
-        this.player2.rooms.delete(this.roomcode);
+        if (this.player1 !== undefined) {
+            this.player1.rooms.delete(this.roomcode);
+        }
+        if (this.player2 !== undefined) {
+            this.player2.rooms.delete(this.roomcode);
+        }
     }
 
-    socketJoin(socket: Socket): number {
+    /**
+     * Connects a socket to the room, adds them as a player, and returns what team they joined.
+     * @param socket The socket to connect to the room with
+     * @returns The team they joined. 1 and 2 are X and O, and 0 is other or error.
+     */
+    handleSocketJoin(socket: Socket): number {
         if (!this.player1Connected()) {
             this.player1 = socket;
             socket.join(this.roomcode);
             this.sendGameState();
+
+            if (this.player2Connected()) {
+                this.player2.emit("status", { success: true, message: "Opponent joined the room." });
+            }
             return 1;
         } else if (!this.player2Connected()) {
             this.player2 = socket;
             socket.join(this.roomcode);
             this.sendGameState();
+
+            if (this.player1Connected()) {
+                this.player1.emit("status", { success: true, message: "Opponent joined the room." });
+            }
             return 2;
         } else {
             return 0;
@@ -197,7 +215,7 @@ class Room {
         
     }
 
-    socketMadeMove(socket: Socket, location: number): { success: boolean, message: string } {
+    handleSocketMadeMove(socket: Socket, location: number): { success: boolean, message: string } {
         // figure out what team they are
         const team = this.getSocketTeam(socket);
         if (team === 0) {
@@ -225,9 +243,10 @@ class Room {
         return { success: true, message: "Move accepted" };
     }
 
-    socketSentMessage(socket: Socket, msg: string): void {
+    handleSocketSentMessage(socket: Socket, msg: string): void {
         const team = this.getSocketTeam(socket);
-        io.to(this.roomcode).emit("chat", { from: team, msg: msg });
+        const time = dateFormat(new Date(), "h:MM:ss");
+        io.to(this.roomcode).emit("chat", { time: time, from: team, msg: msg });
     }
 }
 
@@ -266,12 +285,16 @@ io.on("connection", (socket: Socket) => {
         
         const room: Room = new Room(roomcode);
         rooms.set(roomcode, room);
-        room.socketJoin(socket);
+        room.handleSocketJoin(socket);
 
         socket.emit("status", { success: true, message: "Room created." });
     });
 
     socket.on("joinroom", (roomcode: string) => {
+        if (socket.rooms.size > 1) {
+            socket.emit("status", { success: false, message: "Already in a room." });
+            return;
+        }
         if (roomcode.length === 0) {
             socket.emit("status", { success: false, message: "Invalid room code." });
             return;    
@@ -282,7 +305,7 @@ io.on("connection", (socket: Socket) => {
             return;
         }
 
-        const joined = room.socketJoin(socket);
+        const joined = room.handleSocketJoin(socket);
         if (joined == 0) {
             socket.emit("status", { success: false, message: "Room is full." });
             return;
@@ -310,7 +333,7 @@ io.on("connection", (socket: Socket) => {
             return;
         }
 
-        socket.emit("status", room.socketMadeMove(socket, location));
+        socket.emit("status", room.handleSocketMadeMove(socket, location));
     });
 
     socket.on("chat", (msg) => {
@@ -326,7 +349,7 @@ io.on("connection", (socket: Socket) => {
             return;
         }
 
-        room.socketSentMessage(socket, msg);
+        room.handleSocketSentMessage(socket, msg);
     });
 });
 
