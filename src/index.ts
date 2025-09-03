@@ -8,11 +8,59 @@ const server = createServer(app);
 const io = new Server(server);
 
 type GameState = "win" | "tie" | "playing" | "waiting" | "disconnect";
-type PlayerType = "p1" | "p2" | "srv";
+type Status = { success: boolean, message: string };
 
-class Room {
+class PlayerBase {
+    socket?: Socket;
+    connected: boolean;
+    constructor() {
+        this.socket = undefined;
+        this.connected = false;
+    }
+
+    getConnected(): this is { socket: Socket } {
+        return this.connected && this.socket !== undefined;
+    }
+}
+
+class RoomBase {
     roomcode: string;
+    playerCount: number;
+    players: PlayerBase[];
+
+    constructor(roomcode: string, playerCount: number) {
+        this.roomcode = roomcode;
+        this.playerCount = playerCount;
+        this.players = new Array(playerCount);
+        for (let i = 0; i < this.players.length; i++) {
+            this.players[i] = new PlayerBase();
+        }
+    }
+
+    getSocketPlayer(socket: Socket): PlayerBase | undefined {
+        // Find the player they are
+        const player: PlayerBase | undefined = this.players.find(p => {
+            if (p.getConnected()) {
+                return p.socket.id === socket.id;
+            }
+            return false;
+        });
+        return player;
+    }
+}
+
+class TicTacToePlayer extends PlayerBase {
+    team: number;
+
+    toString(): string {
+        return `TicTacToePlayer[socket.id="${this.socket?.id.substring(0,4)}...",connected=${this.connected},team=${this.team}]`;
+    }
+}
+
+class TicTacToeRoom extends RoomBase {
     
+    players: TicTacToePlayer[];
+
     board: number[];
     turn: number;
 
@@ -20,24 +68,22 @@ class Room {
     winTeam: number;
     winId: number;
 
-    player1: Socket;
-    player2: Socket;
-
     constructor(roomcode: string) {
-        this.roomcode = roomcode;
-        this.board = [0,0,0,0,0,0,0,0,0];
-        this.turn = 0;
-        this.gameState = "waiting";
-        this.winTeam = 0;
-        this.winId = -1;
+        super(roomcode, 2);
+        this.players = new Array(2);
+        for (let i = 0; i < this.players.length; i++) {
+            this.players[i] = new TicTacToePlayer();
+        }
+        this.handleReset();
     }
 
-    player1Connected(): boolean {
-        return this.player1 !== undefined;
-    }
-
-    player2Connected(): boolean {
-        return this.player2 !== undefined;
+    /**
+     * Returns the player that a socket is represented by, from the list of players using a search
+     * @param socket The socket to look for
+     * @returns The player they are
+     */
+    override getSocketPlayer(socket: Socket): TicTacToePlayer | undefined {
+        return super.getSocketPlayer(socket) as TicTacToePlayer | undefined;
     }
 
     getStateGameOver(): boolean {
@@ -55,8 +101,8 @@ class Room {
             
             code: this.roomcode,
             
-            player1Connected: this.player1Connected(),
-            player2Connected: this.player2Connected(),
+            player1Connected: this.players[0].getConnected(),
+            player2Connected: this.players[1].getConnected(),
             board: this.board,
             turn: this.turn,
 
@@ -68,16 +114,16 @@ class Room {
 
         };
 
-        if (this.player1Connected()) {
-            this.player1.emit("roomstatus", {
+        if (this.players[0].getConnected()) {
+            this.players[0].socket.emit("roomstatus", {
                 ...sharedData,
                 yourTeam: 1,
                 yourTurn: this.getStateGameInProgress() && this.getTeamTurn() == 1,
             });
         }
 
-        if (this.player2Connected()) {
-            this.player2.emit("roomstatus", {
+        if (this.players[1].getConnected()) {
+            this.players[1].socket.emit("roomstatus", {
                 ...sharedData,
                 yourTeam: 2,
                 yourTurn: this.getStateGameInProgress() && this.getTeamTurn() == 2,
@@ -96,11 +142,13 @@ class Room {
     }
 
     removePlayers(): void {
-        if (this.player1 !== undefined) {
-            this.player1.rooms.delete(this.roomcode);
+        if (this.players[0].getConnected()) {
+            sendStatusToSocket(this.players[0].socket, { success: false, message: "Room disconnecting" });
+            this.players[0].socket.rooms.delete(this.roomcode);
         }
-        if (this.player2 !== undefined) {
-            this.player2.rooms.delete(this.roomcode);
+        if (this.players[1].getConnected()) {
+            sendStatusToSocket(this.players[1].socket, { success: false, message: "Room disconnecting" });
+            this.players[1].socket.rooms.delete(this.roomcode);
         }
     }
 
@@ -110,36 +158,34 @@ class Room {
      * @returns The team they joined. 1 and 2 are X and O, and 0 is other or error.
      */
     handleSocketJoin(socket: Socket): number {
-        if (!this.player1Connected()) {
-            this.player1 = socket;
-            socket.join(this.roomcode);
-            this.sendGameState();
-
-            if (this.player2Connected()) {
-                this.player2.emit("status", { success: true, message: "Opponent joined the room." });
+        // find the player slot they can join
+        for (let i = 0; i < this.players.length; i++) {
+            if (!this.players[i].getConnected()) {
+                this.players[i].socket = socket;
+                this.players[i].team = i + 1;
+                this.players[i].connected = true;
+                socket.join(this.roomcode);
+                socket.emit("resetchat");
+                this.gameState = "waiting";
+                this.sendGameState();
+                sendStatusToRoom(this.roomcode, { success: true, message: `${this.players[i].toString()} joined`})
+                return this.players[i].team;
             }
-            return 1;
-        } else if (!this.player2Connected()) {
-            this.player2 = socket;
-            socket.join(this.roomcode);
-            this.sendGameState();
-
-            if (this.player1Connected()) {
-                this.player1.emit("status", { success: true, message: "Opponent joined the room." });
-            }
-            return 2;
-        } else {
-            return 0;
         }
+        return 0;
     }
 
-    getSocketTeam(socket: Socket): number {
-        if (socket.id === this.player1.id) {
-            return 1;
-        } else if (socket.id === this.player2.id) {
-            return 2;
-        } else {
-            return 0;
+    getSocketTeam(socket: Socket): number | undefined {
+        const p: TicTacToePlayer | undefined = this.getSocketPlayer(socket);
+        return p?.team;
+    }
+
+    handleSocketDisconnect(socket: Socket) {
+        const player: TicTacToePlayer | undefined = this.getSocketPlayer(socket);
+        if (player) {
+            player.connected = false;
+            player.socket = undefined;
+            player.team = 0;
         }
     }
 
@@ -215,15 +261,16 @@ class Room {
         
     }
 
-    handleSocketMadeMove(socket: Socket, location: number): { success: boolean, message: string } {
+    handleSocketMadeMove(socket: Socket, location: number): Status {
         // figure out what team they are
-        const team = this.getSocketTeam(socket);
-        if (team === 0) {
+        const player = this.getSocketPlayer(socket);
+        if (player === undefined) {
             return { success: false, message: "Not a member of this room" };
         }
         
+        const team: number = player.team;
         if (this.getTeamTurn() !== team) {
-            return { success: false, message: "Not your team's turn" };
+            return { success: false, message: `Not your team (${team})'s turn` };
         }
 
         if (location < 0 || location > 8) {
@@ -243,109 +290,135 @@ class Room {
         return { success: true, message: "Move accepted" };
     }
 
-    handleSocketSentMessage(socket: Socket, msg: string): void {
-        const team = this.getSocketTeam(socket);
+    handleSocketSentMessage(socket: Socket, msg: string): Status {
+        const player = this.getSocketPlayer(socket);
+        if (!player) {
+            return { success: false, message: "Not a member" };
+        }
         const time = dateFormat(new Date(), "h:MM:ss");
-        io.to(this.roomcode).emit("chat", { time: time, from: team, msg: msg });
+        io.to(this.roomcode).emit("chat", { time: time, from: player.team, msg: msg });
+        return { success: true, message: "Sent message" }
+    }
+
+    handleReset() {
+        this.board = [0,0,0,0,0,0,0,0,0];
+        this.turn = 0;
+        this.gameState = "waiting";
+        this.winTeam = 0;
+        this.winId = -1;
     }
 }
 
-const rooms: Map<string, Room> = new Map();
+const rooms: Map<string, TicTacToeRoom> = new Map();
+
+function sendStatusToSocket(socket: Socket, status: Status) {
+    socket.emit("status", status); 
+}
+
+function sendStatusToRoom(roomcode: string, status: Status) {
+    io.to(roomcode).emit("status", status);
+}
 
 io.on("connection", (socket: Socket) => {
-    console.log("a user connected");
+    const name = socket.id.substring(0,4);
+    console.log(`${name}: connection`);
+    
+    socket.onAny((eventName, ...args) => {
+        console.log(`${name}: ${eventName}, ${JSON.stringify(args)}`);
+    });
 
     socket.on("disconnecting", () => {
+        console.log(`${name}: disconnecting`);
         for (const roomcode of socket.rooms) {
             if (roomcode === socket.id) continue;
             const room = rooms.get(roomcode);
             if (room) {
+                room.handleSocketDisconnect(socket);
                 room.gameState = "disconnect";
-                room.sendGameState();
-                room.removePlayers();
-                rooms.delete(roomcode);
+                sendStatusToRoom(roomcode, { success: false, message: "Player disconnected." });
             }
         }
     });
 
     socket.on("createroom", (roomcode: string) => {
         if (socket.rooms.size > 1) {
-            socket.emit("status", { success: false, message: "Already in a room." });
+            sendStatusToSocket(socket, { success: false, message: "Already in a room." });
             return;
         }
         if (rooms.has(roomcode)) {
-            socket.emit("status", { success: false, message: "Room code already taken." });
+            sendStatusToSocket(socket, { success: false, message: "Room code already taken." });
             return;
         }
         
         if (roomcode.length === 0) {
-            socket.emit("status", { success: false, message: "Invalid room code." });
-            return;    
+            sendStatusToSocket(socket, { success: false, message: "Invalid room code." });
+            return;
         }
         
-        const room: Room = new Room(roomcode);
+        const room: TicTacToeRoom = new TicTacToeRoom(roomcode);
         rooms.set(roomcode, room);
         room.handleSocketJoin(socket);
 
-        socket.emit("status", { success: true, message: "Room created." });
+        sendStatusToSocket(socket, { success: true, message: "Room created." });
     });
 
     socket.on("joinroom", (roomcode: string) => {
         if (socket.rooms.size > 1) {
-            socket.emit("status", { success: false, message: "Already in a room." });
+            sendStatusToSocket(socket, { success: false, message: "Already in a room." });
             return;
         }
         if (roomcode.length === 0) {
-            socket.emit("status", { success: false, message: "Invalid room code." });
+            sendStatusToSocket(socket, { success: false, message: "Invalid room code." });
             return;    
         }
         const room = rooms.get(roomcode);
         if (!room) {
-            socket.emit("status", { success: false, message: "Room not found." });
+            sendStatusToSocket(socket, { success: false, message: "Room not found." });
             return;
         }
 
         const joined = room.handleSocketJoin(socket);
         if (joined == 0) {
-            socket.emit("status", { success: false, message: "Room is full." });
+            sendStatusToSocket(socket, { success: false, message: "Room is full." });
             return;
         }
 
-        if (room.player1Connected() && room.player2Connected() && room.gameState === "waiting") {
+        if (room.players[0] !== undefined && room.players[1] !== undefined && room.gameState === "waiting") {
             // start the game
+            room.handleReset();
             room.gameState = "playing";
         }
         
-        socket.emit("status", { success: true, message: "Joined room." });
+        sendStatusToSocket(socket, { success: true, message: "Joined room." });
         room.sendGameState();
     });
 
     socket.on("move", (location: number) => {
         const [roomcode] = Array.from(socket.rooms).filter(r => r !== socket.id);
         if (!roomcode) {
-            socket.emit("status", { success: false, message: "Not in a room." });
+            sendStatusToSocket(socket, { success: false, message: "Not in a room." });
             return;
         }
         
         const room = rooms.get(roomcode);
         if (!room) {
-            socket.emit("status", { success: false, message: "Room does not exist." });
+            sendStatusToSocket(socket, { success: false, message: "Room does not exist." });
             return;
         }
 
-        socket.emit("status", room.handleSocketMadeMove(socket, location));
+        sendStatusToSocket(socket, room.handleSocketMadeMove(socket, location));
     });
 
     socket.on("chat", (msg) => {
         const [roomcode] = Array.from(socket.rooms).filter(r => r !== socket.id);
         if (!roomcode) {
-            socket.emit("status", { success: false, message: "Not in a room." });
+            sendStatusToSocket(socket, { success: false, message: "Not in a room." });
             return;
         }
         
         const room = rooms.get(roomcode);
         if (!room) {
-            socket.emit("status", { success: false, message: "Room does not exist." });
+            sendStatusToSocket(socket, { success: false, message: "Room does not exist." });
             return;
         }
 

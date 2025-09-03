@@ -5,21 +5,39 @@
         <meta http-equiv="X-UA-Compatible" content="IE=edge">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Tic Tac Toe</title>
-        <link rel="stylesheet" href="style.css">
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha512-DxV+EoADOkOygM4IR9yXP8Sb2qwgidEmeqAEmDKIOfPRQZOWbXCzLC6vjbZyy0vPisbH2SyW27+ddLVCN+OMzQ==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
+        <link rel="stylesheet" href="style.css">
+        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
     </head>
 
     <body>
         <div id="main-container">
             <div id="gameplay-container">
-                <div>
-                    <label for="room">Room Code</label>
-                    <input type="text" id="room">
-                    <button id="join-room-btn">Join Room</button>
-                    <button id="create-room-btn">Create Room</button>
+                <div class="d-block" id="join-room-panel">
+                    <div class="p-3">
+                        <label for="room">Join a room</label>
+                        <div class="input-group mb-3">
+                            <span class="input-group-text">Room Code</span>
+                            <input type="text" class="form-control" id="room">
+                            <button class="btn btn-outline-secondary" id="join-room-btn">Join Room</button>
+                        </div>
+                    </div>
+                    <div class="p-3">
+                        <label for="new-room">Create a room</label>
+                        <div class="input-group mb-3">
+                            <span class="input-group-text">Room Code</span>
+                            <input type="text" class="form-control" id="new-room">
+                            <select class="btn btn-outline-secondary custom-select" id="game-type">
+                                <option selected value="ttt">Tic Tac Toe</option>
+                                <option value="filler">Filler</option>
+                            </select>
+                            <button class="btn btn-outline-secondary" id="create-room-btn">Create Room</button>
+                        </div>
+                    </div>
                 </div>
         
-                <div id="game-info" style="display: none;">
+                <div class="d-none" id="game-info">
                     <div class="info">
                         <label for="turn">Turn:</label>
                         <label for="team">Team:</label>
@@ -32,6 +50,11 @@
                     </div>
                 </div>
                 <div id="board-container"></div>
+                <div id="vote-to-continue-container" style="display: none">
+                    <label for="vote-to-continue-btn">Game over. Vote to continue?</label>
+                    <button id="vote-to-continue-btn">Yes</button>
+                    <button disabled>No (just do nothing)</button>
+                </div>
             </div>
             <div id="chat-container">
                 <div style="display: flex; width: 100%; gap: 10px;">

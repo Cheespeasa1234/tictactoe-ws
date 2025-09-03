@@ -1,3 +1,27 @@
+const VALUE_X = 1;
+const VALUE_O = 2;
+const VALUE_BLANK = 0;
+
+const roomInputElement = document.getElementById("room");
+const joinRoomButtonElement = document.getElementById("join-room-btn");
+const createRoomButtonElement = document.getElementById("create-room-btn");
+const boardContainerElement = document.getElementById("board-container");
+const voteToContinueContainerElement = document.getElementById("vote-to-continue-container");
+const voteToContinueButtonElement = document.getElementById("vote-to-continue-btn");
+const joinRoomContainerElement = document.getElementById("join-room-panel");
+
+const turnCounterElement = document.getElementById("turn");
+const teamDisplayElement = document.getElementById("team");
+const gameStateDisplayElement = document.getElementById("game-state");
+const gameInfoContainerElement = document.getElementById("game-info");
+
+const sendMessageButtonElement = document.getElementById("send-message-btn");
+const messageInputElement = document.getElementById("message");
+const chatDisplayElement = document.getElementById("chat");
+
+let myTeam;
+let chatHistory = [];
+
 const socket = io();
 socket.onAny((eventName, ...args) => {
     console.log("recieved " + eventName + ": " + JSON.stringify(args));
@@ -8,15 +32,28 @@ socket.on("status", (data) => {
     handleChat({ from: 0, msg: message });
 });
 
+socket.on("resetchat", () => {
+    chatHistory = [];
+});
+
 socket.on("roomstatus", (room) => {
     const { code, player1Connected, player2Connected, board, turn, gameState, gameStateOver, gameStateInProgress, yourTeam, yourTurn } = room;
     
+    joinRoomContainerElement.classList.remove("d-block");
+    joinRoomContainerElement.classList.add("d-none");
+    gameInfoContainerElement.classList.remove("d-none");
+    gameInfoContainerElement.classList.add("d-flex");
+
     setBoard(board);
-    gameInfoContainerElement.style.display = "flex";
     turnCounterElement.innerText = turn;
     teamDisplayElement.innerText = yourTurn;
     gameStateDisplayElement.innerText = gameState;
     myTeam = yourTeam;
+
+    if (gameState === "win" || gameState === "tie") {
+        voteToContinueContainerElement.style.display = "block";
+        voteToContinueButtonElement.setAttribute("disabled", true);
+    }
 });
 
 function handleChat(data) {
@@ -58,27 +95,6 @@ function handleChat(data) {
 }
 
 socket.on("chat", handleChat);
-
-const VALUE_X = 1;
-const VALUE_O = 2;
-const VALUE_BLANK = 0;
-
-const roomInputElement = document.getElementById("room");
-const joinRoomButtonElement = document.getElementById("join-room-btn");
-const createRoomButtonElement = document.getElementById("create-room-btn");
-const boardContainerElement = document.getElementById("board-container");
-
-const turnCounterElement = document.getElementById("turn");
-const teamDisplayElement = document.getElementById("team");
-const gameStateDisplayElement = document.getElementById("game-state");
-const gameInfoContainerElement = document.getElementById("game-info");
-
-const sendMessageButtonElement = document.getElementById("send-message-btn");
-const messageInputElement = document.getElementById("message");
-const chatDisplayElement = document.getElementById("chat");
-
-let myTeam;
-const chatHistory = [];
 
 function createXIcon() {
     const div = document.createElement("div");
@@ -147,4 +163,9 @@ messageInputElement.addEventListener("keydown", e => {
     if (e.key === "Enter" && !e.shiftKey && messageInputElement.value.trim().length > 0) {
         activateMessageSend();
     }
+});
+
+voteToContinueButtonElement.addEventListener("click", () => {
+    socket.emit("votetocontinue");
+    voteToContinueButtonElement.removeAttribute("disabled");
 });
